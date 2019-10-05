@@ -5,9 +5,10 @@ const { buildSchema } = require('graphql');
 const mongoose = require('mongoose');
 
 const MyEvent = require('./models/event');
+const User = require('./models/user');
+const bcrypt = require('bcryptjs');
 
 const app = express();
-
 
 app.use(bodyParser.json());
 
@@ -36,6 +37,17 @@ app.use(
             date: String!
         }
 
+        type User {
+          _id: ID!
+          email: String!
+          password: String
+        }
+
+        input UserInput {
+          email: String!
+          password: String!
+        }
+
         input Eventinput {
             title: String!
             description: String!
@@ -49,6 +61,7 @@ app.use(
 
         type RootMutation {
             createEvent(eventInput: Eventinput): Event
+            createUser(userInput: UserInput): User
         }
 
         schema {
@@ -79,7 +92,6 @@ app.use(
         return event
           .save()
           .then(result => {
-            console.log(result);
             return { ...result._doc };
           })
           .catch(err => {
@@ -88,6 +100,32 @@ app.use(
           });
 
         return event;
+      },
+
+      createUser: args => {
+        
+        // findOne() is the mongoDB method to the only one collection from the DB
+        // here i am using to avoid the duplication of the field 'email'
+        return User.findOne({ email: args.userInput.email })
+          .then(user => {
+            if (user) {
+              throw new Error('User already exists');
+            }
+            return bcrypt.hash(args.userInput.password, 12);
+          })
+          .then(hashedPassword => {
+            const user = new User({
+              email: args.userInput.email,
+              password: hashedPassword
+            });
+            return user.save();
+          })
+          .then(result => {
+            return { ...result._doc, password: null };
+          })
+          .catch(err => {
+            throw err;
+          });
       }
     },
     graphiql: true
@@ -96,7 +134,8 @@ app.use(
 
 mongoose
   .connect(
-    `mongodb+srv://${process.env.MONGO_USER}:${process.env.MONGO_PASSWORD}@cluster0-lcvog.gcp.mongodb.net/${process.env.MONGO_DB}?retryWrites=true&w=majority`
+    `mongodb+srv://${process.env.MONGO_USER}:${process.env.MONGO_PASSWORD}@cluster0-lcvog.gcp.mongodb.net/${process.env.MONGO_DB}?retryWrites=true&w=majority`,
+    { useNewUrlParser: true, useUnifiedTopology: true }
   )
   .then(() => {
     app.listen(3000);
